@@ -6,6 +6,7 @@ import base64
 from fpdf import FPDF
 import io
 import re
+import textwrap
 
 # --- Page Setup ---
 st.set_page_config(page_title="Gemini ATS Resume Optimizer", layout="centered")
@@ -31,14 +32,20 @@ def clean_markdown(text):
     text = re.sub(r'\*(.*?)\*', r'<em>\1</em>', text)
     return text
 
-# --- Text to PDF ---
+# --- Text to PDF (safe wrapping for long lines) ---
 def convert_to_pdf(text):
     pdf = FPDF()
     pdf.add_page()
     pdf.set_auto_page_break(auto=True, margin=15)
     pdf.set_font("Arial", size=12)
     for line in text.split('\n'):
-        pdf.multi_cell(0, 10, line)
+        wrapped_lines = textwrap.wrap(line, width=100, break_long_words=True)
+        for subline in wrapped_lines:
+            try:
+                pdf.multi_cell(0, 10, subline)
+            except Exception:
+                safe_line = subline.encode("ascii", errors="ignore").decode()
+                pdf.multi_cell(0, 10, safe_line)
     buffer = io.BytesIO()
     pdf.output(buffer)
     buffer.seek(0)
@@ -47,7 +54,7 @@ def convert_to_pdf(text):
 # --- Main Flow ---
 if api_key:
     genai.configure(api_key=api_key)
-    st.success("API Key validated!")
+    st.success("✅ API Key validated!")
 
     # --- Step 2: Resume + JD Input ---
     st.header("📄 Step 2: Provide Resume and Job Description")
@@ -101,7 +108,7 @@ Please rewrite my resume to better match the job description using appropriate k
                 unsafe_allow_html=True
             )
 
-            # PDF Download
+            # PDF Download (safe version)
             pdf_buffer = convert_to_pdf(optimized_resume)
             st.download_button("📄 Download as PDF", data=pdf_buffer, file_name="Optimized_Resume.pdf", mime="application/pdf")
 
@@ -109,6 +116,6 @@ Please rewrite my resume to better match the job description using appropriate k
             st.error(f"❌ Gemini API Error: {str(e)}")
 
     else:
-        st.info("Please upload or paste both your resume and job description.")
+        st.info("📥 Please upload or paste both your resume and job description.")
 else:
     st.warning("🔑 Please enter a valid Gemini API Key to continue.")
