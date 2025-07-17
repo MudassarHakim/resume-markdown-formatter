@@ -2,4 +2,4 @@ streamlit
 google-generativeai
 pdfplumber
 docx2txt
-fpdf
+fpdf2
