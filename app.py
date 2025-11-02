@@ -53,6 +53,76 @@ def convert_to_pdf(text):
     buffer.seek(0)
     return buffer
 
+
+# --- Gemini model discovery ---
+def get_flash_models_from_genai():
+    """
+    Discover available Gemini models from the genai SDK that match the pattern
+    gemini-<version>-flash (e.g. gemini-2.5-flash). Returns a list of model names
+    sorted by version (newest first). If discovery fails or finds nothing, returns []
+    """
+    try:
+        resp = None
+        # Try several possible list APIs on the SDK
+        if hasattr(genai, "list_models"):
+            resp = genai.list_models()
+        elif hasattr(genai, "models") and hasattr(genai.models, "list"):
+            resp = genai.models.list()
+        elif hasattr(genai, "Model") and hasattr(genai.Model, "list"):
+            # fallback pattern
+            resp = genai.Model.list()
+
+        items = []
+        if resp is None:
+            items = []
+        elif isinstance(resp, dict) and "models" in resp:
+            items = resp["models"]
+        elif hasattr(resp, "models"):
+            items = resp.models
+        elif isinstance(resp, (list, tuple)):
+            items = resp
+        else:
+            # try to treat resp as iterable
+            try:
+                items = list(resp)
+            except Exception:
+                items = []
+
+        flash_models = []
+        for it in items:
+            name = None
+            if isinstance(it, dict):
+                # common keys: 'name', 'id', 'model'
+                name = it.get("name") or it.get("id") or it.get("model")
+            else:
+                name = getattr(it, "name", None) or getattr(it, "id", None) or getattr(it, "model", None)
+            if not name:
+                # last resort: string representation
+                try:
+                    name = str(it)
+                except Exception:
+                    name = None
+            if not name:
+                continue
+
+            # match patterns like gemini-2-flash, gemini-2.5-flash, gemini-2.5.1-flash
+            m = re.match(r"^gemini-(\d+(?:\.\d+)*)-flash$", name)
+            if m:
+                ver = m.group(1)
+                # convert version string to tuple of ints for robust sorting
+                try:
+                    ver_tuple = tuple(int(p) for p in ver.split("."))
+                except Exception:
+                    ver_tuple = (0,)
+                flash_models.append((ver_tuple, name))
+
+        # sort by version descending (newest first)
+        flash_models.sort(reverse=True, key=lambda x: x[0])
+        return [name for _, name in flash_models]
+    except Exception:
+        return []
+
+
 # --- Main Flow ---
 if api_key:
     genai.configure(api_key=api_key)
@@ -92,18 +162,28 @@ Please rewrite my resume to better match the job description using appropriate k
 
         try:
             with st.spinner("⏳ Optimizing your resume using Gemini AI..."):
-                # Try a list of Gemini flash models in order until one succeeds.
-                candidate_models = [
-                    "gemini-2.5-flash",
-                    "gemini-2.1-flash",
-                    "gemini-1.5-flash",
-                    "gemini-1.0-flash",
-                ]
+                # Dynamically discover candidate flash models from the SDK, with fallback defaults
+                candidate_models = get_flash_models_from_genai()
+                if candidate_models:
+                    st.info(f"Discovered gemini flash models: {candidate_models}")
+                else:
+                    # safe fallback list if SDK doesn't provide model listing or none found
+                    candidate_models = [
+                        "gemini-2.5-flash",
+                        "gemini-2.1-flash",
+                        "gemini-1.5-flash",
+                        "gemini-1.0-flash",
+                    ]
+                    st.info(f"Using fallback gemini flash models: {candidate_models}")
 
                 optimized_resume = None
                 last_error = None
 
                 for model_name in candidate_models:
+                    # only try models that match the gemini-<version>-flash format
+                    if not re.match(r"^gemini-(\d+(?:\.\d+)*)-flash$", model_name):
+                        st.warning(f"Skipping invalid model name format: {model_name}")
+                        continue
                     try:
                         st.info(f"Trying model: {model_name}")
                         model = genai.GenerativeModel(model_name)
