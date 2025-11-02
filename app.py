@@ -18,6 +18,8 @@ api_key = st.text_input("Enter your Gemini API Key", type="password")
 
 # --- File/Text Extraction ---
 def extract_text(uploaded_file):
+    if uploaded_file is None:
+        return ""
     if uploaded_file.name.endswith(".pdf"):
         with pdfplumber.open(uploaded_file) as pdf:
             return "\n".join(page.extract_text() or "" for page in pdf.pages)
@@ -85,14 +87,39 @@ JOB DESCRIPTION:
 Here is my current resume:
 {resume_text}
 
-Please rewrite my resume to better match the job description using appropriate keywords, phrasing, and skills. Ensure it is still truthful and reflects the resume structure (Summary, Work Experience, Projects, Education, etc.). Return only the optimized resume text.
-        """
+Please rewrite my resume to better match the job description using appropriate keywords, phrasing, and skills. Ensure it is still truthful and reflects the resume structure (Summary, Work Experience, Education, Skills, and Certifications). Keep the output as plain text resume content.
+"""
 
         try:
             with st.spinner("⏳ Optimizing your resume using Gemini AI..."):
-                model = genai.GenerativeModel('gemini-2.5-flash')
-                response = model.generate_content(prompt)
-                optimized_resume = response.text
+                # Try a list of Gemini flash models in order until one succeeds.
+                candidate_models = [
+                    "gemini-2.5-flash",
+                    "gemini-2.1-flash",
+                    "gemini-1.5-flash",
+                    "gemini-1.0-flash",
+                ]
+
+                optimized_resume = None
+                last_error = None
+
+                for model_name in candidate_models:
+                    try:
+                        st.info(f"Trying model: {model_name}")
+                        model = genai.GenerativeModel(model_name)
+                        response = model.generate_content(prompt)
+                        # response.text is expected; fall back to str(response) if not available
+                        optimized_resume = getattr(response, 'text', None) or str(response)
+                        st.success(f"✅ Optimized with {model_name}")
+                        break
+                    except Exception as model_err:
+                        last_error = model_err
+                        st.warning(f"Model {model_name} failed: {model_err}")
+                        # try the next model
+
+                if not optimized_resume:
+                    # No models succeeded
+                    raise Exception(f"All candidate Gemini flash models failed. Last error: {last_error}")
 
             # Step 4: Display output
             st.markdown("📝 **Optimized Resume**", unsafe_allow_html=True)
