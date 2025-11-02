@@ -90,7 +90,7 @@ Please rewrite my resume to better match the job description using appropriate k
 
         try:
             with st.spinner("⏳ Optimizing your resume using Gemini AI..."):
-                model = genai.GenerativeModel('gemini-1.5-flash')
+                model = genai.GenerativeModel('gemini-2.5-flash')
                 response = model.generate_content(prompt)
                 optimized_resume = response.text
 
